@@ -25,8 +25,8 @@ c-----------------------------------------------------------------------
 
 
       !local
-      integer m,mw,k,iter
-      double precision A(3,3)
+      integer m,mw,k,iter,cwavetype
+      !double precision A(3,3)
       double precision r(3,3)
       double precision lambda(3)
       double precision del(3)
@@ -41,6 +41,7 @@ c-----------------------------------------------------------------------
       double precision deldelh,deldelphi,delP
       double precision s1m,s2m,hm
       double precision det1,det2,det3,determinant
+      double precision a,b,c
 
       logical rare1,rare2,rarecorrector,rarecorrectortest,sonic
 
@@ -99,12 +100,14 @@ c     ## Is this correct 2-wave when rarecorrector == .true. ??
          r(2,mw)=lambda(mw)
          r(3,mw)=(lambda(mw))**2
       enddo
+      cwavetype=2
       if (.not.rarecorrector) then
          lambda(2) = 0.5d0*(lambda(1)+lambda(3))
 c         lambda(2) = max(min(0.5d0*(s1m+s2m),sE2),sE1)
          r(1,2)=0.d0
          r(2,2)=0.d0
          r(3,2)=1.d0
+         cwavetype=1
       endif
 c     !---------------------------------------------------
 
@@ -125,145 +128,121 @@ c     !determine a few quanitites needed for steady state wave if iterated
       huLstar=uLstar*hLstar
       huRstar=uRstar*hRstar
 
-      !iterate to better determine the steady state wave
-      convergencetol=1.d-6
-      do iter=1,maxiter
-         !determine steady state wave (this will be subtracted from the delta vectors)
-         if (min(hLstar,hRstar).lt.drytol.and.rarecorrector) then
-            rarecorrector=.false.
-            hLstar=hL
-            hRstar=hR
-            uLstar=uL
-            uRstar=uR
-            huLstar=uLstar*hLstar
-            huRstar=uRstar*hRstar
-            lambda(2) = 0.5d0*(lambda(1)+lambda(3))
-c           lambda(2) = max(min(0.5d0*(s1m+s2m),sE2),sE1)
-            r(1,2)=0.d0
-            r(2,2)=0.d0
-            r(3,2)=1.d0
-         endif
+      
+    !determine steady state wave (this will be subtracted from the delta vectors)
+      if (min(hLstar,hRstar).lt.drytol.and.rarecorrector) then
+        rarecorrector=.false.
+        lambda(2) = 0.5d0*(lambda(1)+lambda(3))
+c       lambda(2) = max(min(0.5d0*(s1m+s2m),sE2),sE1)
+        r(1,2)=0.d0
+        r(2,2)=0.d0
+        r(3,2)=1.d0
+        cwavetype=1
+      endif
 
-         hbar =  max(0.5d0*(hLstar+hRstar),0.d0)
-         s1s2bar = 0.25d0*(uLstar+uRstar)**2 - g*hbar
-         s1s2tilde= max(0.d0,uLstar*uRstar) - g*hbar
+      hbar =  max(0.5d0*(hLstar+hRstar),0.d0)
+      s1s2bar = 0.25d0*(uLstar+uRstar)**2 - g*hbar
+      s1s2tilde= max(0.d0,uLstar*uRstar) - g*hbar
 
 c        !find if sonic problem
          ! MODIFIED from 5.3.1 version
-         sonic = .false.
-         if (abs(s1s2bar) <= criticaltol) then
-            sonic = .true.
-         else if (s1s2bar*s1s2tilde <= criticaltol**2) then
-            sonic = .true.
-         else if (s1s2bar*sE1*sE2 <= criticaltol**2) then
-            sonic = .true.
-         else if (min(abs(sE1),abs(sE2)) < criticaltol_2) then
-            sonic = .true.
-         else if (sE1 <  criticaltol_2 .and. s1m > -criticaltol_2) then
-            sonic = .true.
-         else if (sE2 > -criticaltol_2 .and. s2m <  criticaltol_2) then
-            sonic = .true.
-         else if ((uL+dsqrt(g*hL))*(uR+dsqrt(g*hR)) < 0.d0) then
-            sonic = .true.
-         else if ((uL- dsqrt(g*hL))*(uR- dsqrt(g*hR)) < 0.d0) then
-            sonic = .true.
-         end if
+      sonic = .false.
+      if (abs(s1s2bar) <= criticaltol) then
+        sonic = .true.
+      else if (s1s2bar*s1s2tilde <= criticaltol**2) then
+        sonic = .true.
+      else if (s1s2bar*sE1*sE2 <= criticaltol**2) then
+        sonic = .true.
+      else if (min(abs(sE1),abs(sE2)) < criticaltol_2) then
+        sonic = .true.
+      else if (sE1 <  criticaltol_2 .and. s1m > -criticaltol_2) then
+        sonic = .true.
+      else if (sE2 > -criticaltol_2 .and. s2m <  criticaltol_2) then
+        sonic = .true.
+      else if ((uL+dsqrt(g*hL))*(uR+dsqrt(g*hR)) < 0.d0) then
+        sonic = .true.
+      else if ((uL- dsqrt(g*hL))*(uR- dsqrt(g*hR)) < 0.d0) then
+        sonic = .true.
+      end if
 
 c        !find jump in h, deldelh
-         if (sonic) then
-            deldelh =  -delb
-         else
-            deldelh = delb*g*hbar/s1s2bar
-         endif
-c        !find bounds in case of critical state resonance, or negative states
-         if (sE1.lt.-criticaltol.and.sE2.gt.criticaltol) then
-            deldelh = min(deldelh,hstarHLL*(sE2-sE1)/sE2)
-            deldelh = max(deldelh,hstarHLL*(sE2-sE1)/sE1)
-         elseif (sE1.ge.criticaltol) then
-            deldelh = min(deldelh,hstarHLL*(sE2-sE1)/sE1)
-            deldelh = max(deldelh,-hL)
-         elseif (sE2.le.-criticaltol) then
-            deldelh = min(deldelh,hR)
-            deldelh = max(deldelh,hstarHLL*(sE2-sE1)/sE2)
-         endif
+      if (sonic) then
+        deldelh =  -delb
+      else
+        deldelh = delb*g*hbar/s1s2bar
+      endif
+c    !find bounds in case of critical state resonance, or negative states
+      if (sE1.lt.-criticaltol.and.sE2.gt.criticaltol) then
+        deldelh = min(deldelh,hstarHLL*(sE2-sE1)/sE2)
+        deldelh = max(deldelh,hstarHLL*(sE2-sE1)/sE1)
+      elseif (sE1.ge.criticaltol) then
+        deldelh = min(deldelh,hstarHLL*(sE2-sE1)/sE1)
+        deldelh = max(deldelh,-hL)
+      elseif (sE2.le.-criticaltol) then
+        deldelh = min(deldelh,hR)
+        deldelh = max(deldelh,hstarHLL*(sE2-sE1)/sE2)
+      endif
 
 c        ! adjust deldelh for well-balancing of atmospheric pressure difference 
 c         !deldelh = deldelh - delP/(rho*g) !delp now = 0.0
 
 c        !find jump in phi, deldelphi
-         if (sonic) then
-            deldelphi = -g*hbar*delb
-         else
-            deldelphi = -delb*g*hbar*s1s2tilde/s1s2bar
-         endif
-c        !find bounds in case of critical state resonance, or negative states
-         deldelphi=min(deldelphi,g*max(-hLstar*delb,-hRstar*delb))
-         deldelphi=max(deldelphi,g*min(-hLstar*delb,-hRstar*delb))
-         !deldelphi = deldelphi - hbar * delp / rho !delp=0.d0
+      if (sonic) then
+        deldelphi = -g*hbar*delb
+      else
+        deldelphi = -delb*g*hbar*s1s2tilde/s1s2bar
+      endif
+c     !find bounds in case of critical state resonance, or negative states
+      deldelphi=min(deldelphi,g*max(-hLstar*delb,-hRstar*delb))
+      deldelphi=max(deldelphi,g*min(-hLstar*delb,-hRstar*delb))
+      !deldelphi = deldelphi - hbar * delp / rho !delp=0.d0
 
-         del(1)=delh-deldelh
-         del(2)=delhu
-         del(3)=delphi-deldelphi
+      del(1)=delh-deldelh
+      del(2)=delhu
+      del(3)=delphi-deldelphi
+
+      a = lambda(1)
+      b = lambda(2)
+      c = lambda(3)
+
+      !solve for beta = Rinv*delta
+      if (cwavetype==1) then
+        !r2 is (0,0,1)
+        beta(1) = (c*del(1) - del(2))/(c-a)
+        beta(2) = a*c*del(1) - (a+c)*del(2) + del(3)
+        beta(3) = (del(2)-a*del(1))/(c-a)
+      elseif (cwavetype==2) then
+        !r2 is (1, s2, s2**2)
+        beta(1) = (b*c*del(1) - (b+c)*del(2) +del(3))/
+     &          (a**2- a*b - a*c + b*c)
+        beta(2) = (-a*c*del(1) + (a+c)*del(2) -del(3))/
+     &      (a*b - a*c- b**2 + b*c)
+        beta(3) = (a*b*del(1) -(a+b)*del(2) + del(3))/
+     &      (a*b - a*c - b*c + c**2)
+      endif
+
 
 c        !Determine determinant of eigenvector matrix========
-         det1=r(1,1)*(r(2,2)*r(3,3)-r(2,3)*r(3,2))
-         det2=r(1,2)*(r(2,1)*r(3,3)-r(2,3)*r(3,1))
-         det3=r(1,3)*(r(2,1)*r(3,2)-r(2,2)*r(3,1))
-         determinant=det1-det2+det3
+         !det1=r(1,1)*(r(2,2)*r(3,3)-r(2,3)*r(3,2))
+         !det2=r(1,2)*(r(2,1)*r(3,3)-r(2,3)*r(3,1))
+         !det3=r(1,3)*(r(2,1)*r(3,2)-r(2,2)*r(3,1))
+         !determinant=det1-det2+det3
 
 c        !solve for beta(k) using Cramers Rule=================
-         do k=1,3
-            do mw=1,3
-                  A(1,mw)=r(1,mw)
-                  A(2,mw)=r(2,mw)
-                  A(3,mw)=r(3,mw)
-            enddo
-            A(1,k)=del(1)
-            A(2,k)=del(2)
-            A(3,k)=del(3)
-            det1=A(1,1)*(A(2,2)*A(3,3)-A(2,3)*A(3,2))
-            det2=A(1,2)*(A(2,1)*A(3,3)-A(2,3)*A(3,1))
-            det3=A(1,3)*(A(2,1)*A(3,2)-A(2,2)*A(3,1))
-            beta(k)=(det1-det2+det3)/determinant
-         enddo
-
-         !exit if things aren't changing
-         if (abs(del(1)**2+del(3)**2-delnorm).lt.convergencetol) exit
-         delnorm = del(1)**2+del(3)**2
-         !find new states qLstar and qRstar on either side of interface
-         hLstar=hL
-         hRstar=hR
-         uLstar=uL
-         uRstar=uR
-         huLstar=uLstar*hLstar
-         huRstar=uRstar*hRstar
-         do mw=1,mwaves
-            if (lambda(mw).lt.0.d0) then
-               hLstar= hLstar + beta(mw)*r(1,mw)
-               huLstar= huLstar + beta(mw)*r(2,mw)
-            endif
-         enddo
-         do mw=mwaves,1,-1
-            if (lambda(mw).gt.0.d0) then
-               hRstar= hRstar - beta(mw)*r(1,mw)
-               huRstar= huRstar - beta(mw)*r(2,mw)
-            endif
-         enddo
-
-         if (hLstar.gt.drytol) then
-            uLstar=huLstar/hLstar
-         else
-            hLstar=max(hLstar,0.d0)
-            uLstar=0.d0
-         endif
-         if (hRstar.gt.drytol) then
-            uRstar=huRstar/hRstar
-         else
-            hRstar=max(hRstar,0.d0)
-            uRstar=0.d0
-         endif
-
-      enddo ! end iteration on Riemann problem
+         !do k=1,3
+         !   do mw=1,3
+         !         A(1,mw)=r(1,mw)
+         !         A(2,mw)=r(2,mw)
+         !         A(3,mw)=r(3,mw)
+         !   enddo
+         !   A(1,k)=del(1)
+         !   A(2,k)=del(2)
+         !   A(3,k)=del(3)
+         !   det1=A(1,1)*(A(2,2)*A(3,3)-A(2,3)*A(3,2))
+         !   det2=A(1,2)*(A(2,1)*A(3,3)-A(2,3)*A(3,1))
+         !   det3=A(1,3)*(A(2,1)*A(3,2)-A(2,2)*A(3,1))
+         !   beta(k)=(det1-det2+det3)/determinant
+         !enddo
 
       fw(:,:) = 0.d0  ! initialize before setting some waves
 
@@ -332,7 +311,7 @@ c-----------------------------------------------------------------------
       delb = bR-bL
       delP = pR - pL
 
-      convergencetol= 1.d-16
+      !convergencetol= 1.d-16 !eliminating option to loop
       criticaltol = 1.d-99
 
       deldelh = -delb
